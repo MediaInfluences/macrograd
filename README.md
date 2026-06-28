@@ -2,7 +2,7 @@
 
 A tiny **matrix-based autograd engine** — [micrograd](https://github.com/karpathy/micrograd), but operating on whole matrices instead of single scalars. Built from scratch to actually understand how backpropagation works under the hood.
 
-> **Status:** Early WIP. The computational-graph skeleton and most forward ops are sketched in; the backward pass and a working training example are still to come. **Not yet runnable end-to-end.**
+> **Status:** WIP. Forward pass is coming together — `__matmul__` and broadcasting now work and run cleanly in `engine/test.py`, and `Matrix` supports `+`/`*`/`@` operators. The **backward pass is still stubbed**, so it's not yet a working autograd engine end-to-end.
 
 ## Why "macro"?
 
@@ -14,16 +14,17 @@ Learning project from [Neural Networks: Zero to Hero](https://karpathy.ai/zero-t
 
 The `Matrix` class (`engine/matrix.py`) builds a computational graph as you compute. Each `Matrix` tracks its `elements`, a `grad`, its input nodes (`_inputs`), the op that produced it (`_op`), and a local `_backward` closure.
 
-- **Forward ops sketched:** `transpose`, `hadamar_sum` (element-wise add), `hadamar_product` (element-wise mul), `__matmul__` (matrix multiply), `relu`, `max_margin_loss`
-- **Broadcasting:** `_should_broadcast` (decides which side broadcasts) + `_broadcast`
-- **`backwards()`:** topological sort of the graph + a reverse pass to propagate gradients
+- **Forward ops working (tested):** `__matmul__` (matrix multiply) and broadcasting both run in `engine/test.py`
+- **Operator overloads:** `+` (`__add__`/`__radd__`) and `*` (`__mul__`/`__rmul__`) wrap the Hadamard ops, plus `@` for matmul — so you can write `a + c`, `a @ b` directly
+- **Forward ops present:** `transpose`, `hadamar_sum` (element-wise add), `hadamar_product` (element-wise mul), `relu`, `max_margin_loss`
+- **Broadcasting:** `_should_broadcast` (decides which side broadcasts) + `_broadcast`, recently reworked after the first design was wrong
+- **`backwards()`:** topological sort of the graph + a reverse pass to propagate gradients (not yet functional — see below)
 
 ## What's not done yet
 
-- Most per-op `_backward` gradient functions are still stubs (`pass`) — wiring up the backward pass is the next big push
-- Broadcasting and a couple of forward ops (matmul indexing, the Hadamard helpers) have bugs to work through
-- `backwards()` doesn't populate the topo order correctly yet
-- No end-to-end training example (goal: fit something tiny) and no real test suite beyond a scratch `engine/test.py`
+- The backward pass isn't wired up yet — most per-op `_backward` functions are still stubs (`pass`), and `backwards()` itself needs finishing. This is the next big push
+- Coverage is thin: the forward ops work in the demo, but the edge cases (odd shapes, non-square broadcasts) aren't exercised yet
+- No end-to-end training example (goal: fit something tiny) and no real test suite beyond the scratch `engine/test.py`
 
 ## Structure
 
@@ -31,7 +32,7 @@ The `Matrix` class (`engine/matrix.py`) builds a computational graph as you comp
 macrograd/
 ├── engine/
 │   ├── matrix.py     # the Matrix autograd engine (the heart of it)
-│   └── test.py       # scratch test (transpose demo)
+│   └── test.py       # scratch test (transpose, matmul, broadcast-add)
 ├── main.py           # entrypoint stub
 ├── pyproject.toml    # uv project, Python 3.13
 └── README.md
@@ -50,7 +51,9 @@ uv run python -m engine.test
 ## Roadmap
 
 - [ ] Finish `_backward` for every op (matmul, hadamard, relu, transpose, loss)
-- [ ] Fix broadcasting + matmul indexing
-- [ ] Make `backwards()` build the topological order correctly
+- [ ] Get `backwards()` running end-to-end
+- [ ] Harden the forward ops against more shapes / edge cases
+- [x] Fix matmul
+- [x] Rework broadcasting after the first design was wrong
 - [ ] A minimal training loop — fit a tiny dataset end-to-end
 - [ ] Gradient-correctness tests (compare against numerical gradients)
