@@ -20,7 +20,7 @@ class Matrix():
 		return (len(self.elements), len(self.elements[0]))
 	
 
-	#Optimize this further for funsies (Maybe for the C prog later on look into bitwise ops
+	#I optimized this by making it functional 
 	def _should_broadcast(self, dims: tuple[int, int]) -> str | bool:
 		lhs_a_one = 1 if self._dims[0] == 1 else 0
 		lhs_b_one = 1 if self._dims[1] == 1 else 0
@@ -31,21 +31,34 @@ class Matrix():
 		LHS = 0
 		RHS = 0
 
-		if lhs_a_one:
-			if lhrh_b_match:
-				if not rhs_a_one:
-					return 'LHS'
-				if not rhs_a_one:
-					return 'LHS' 
-			if lhs_b_one:
-				return 'LHS'		
-		elif not lhs_a_one:
-			if lhrh_a_match:
-				if (not lhrh_b_match) and (lhs_b_one or rhs_b_one):
-					return 'RHS'		
-			if rhs_a_one and rhs_b_one:
-				return 'RHS'
-		return False
+		if lhs_a_one: 					#(1,?) (?,?)
+			if lhrh_b_match:			#(1,m) (?,m)
+				if lhs_b_one:			#(1,1) (?,1)
+					if not rhs_a_one:	#(1,1) (n,1) ; n!=1
+						return 'LHS'	#True
+					return False		#(1,1) (1,1) -> False
+				if not rhs_a_one:		#(1,m) (n,m) ; n!=1
+					return 'LHS'		#True
+			if lhs_b_one:				#(1,1) (?,m) ; m!=1
+				return 'LHS'			#True
+			return False				#(1,x) (?,y) -> False
+
+		if not lhs_a_one:				#(n,?) (?,?) ; n!=1
+			if lhrh_a_match:			#(n,?) (n,?)
+				if not lhrh_b_match:		#(n,x) (n,y)
+					if lhs_b_one:		#(n,1) (n,y)
+						return 'LHS'	#True
+					if rhs_b_one:		#(n,x) (n,1) 		
+						return 'RHS'	#True		
+					return False		#(n,x) (n,y) -> False
+				return False 			#(n,m) (n,m) ; n!=1 -> False
+			if rhs_a_one:				#(x,?) (1,?) ; x!= 1
+				if lhrh_b_match:		#(x,m) (1,m) ; x!= 1
+					return 'RHS'		#True
+				if rhs_b_one:			#(n,x) (1,1) ; x!=1
+					return 'RHS'		#True
+				return False			#(x,n) (1,m) ; m!=1  -> False
+			return False				#(x,?) (y,?) ; x,y != 1 -> False
 			
 		
 	def _broadcast(self, dims: tuple[int, int]):
@@ -113,7 +126,7 @@ class Matrix():
 		
 			else:
 				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(self.elements, broadcasted.elements)]
-				out = Matrix(result, (self, broadcasted), (self, broadcasted), '+')
+				out = Matrix(result, (self, broadcasted), '+')
 
 		def _backward():
 			pass
@@ -126,38 +139,33 @@ class Matrix():
 		assert(isinstance(other, Matrix)), "Both operands of a hadamar product must be type Matrix"
 		maybe = self._should_broadcast(other._dims)
 		assert isinstance(maybe, str), f"Cannot perform a Hadamar Product on elements of dim {self._dims} and {other._dims}"
-			
 		if maybe == 'LHS':
 			broadcasted = self._broadcast(other._dims)
 			if (other._dims != broadcasted._dims):
 				bbroadcasted = broadcasted._broadcast(other._dims) 
-				out = Matrix([xi * yi for xi, yi in zip(bbroadcasted.elements, other.elements)], (bbroadcasted, other), '*')
+				result  = [[xi * yi for xi, yi in zip(i, j)] for i, j in zip(bbroadcasted.elements, other.elements)]
+				out = Matrix(result, (bbroadcasted, self), '*')
+			
 			else:
-				out = Matrix([xi * yi for xi, yi in zip(broadcasted.elements, other.elements)], (broadcasted, other), '*')
-		else:
+				result  = [[xi * yi for xi, yi in zip(i, j)] for i, j in zip(broadcasted.elements, other.elements)]
+				out = Matrix(result, (broadcasted, self), '*')
+
+		elif maybe == 'RHS':
 			broadcasted = other._broadcast(self._dims)
 			if (self._dims != broadcasted._dims):
 				bbroadcasted = broadcasted._broadcast(self._dims)
-				result  = [[xi * yi for xi, yi in zip(i, j)] for i, j in zip(bbroadcasted.elements, self.elements)]
-				out = Matrix(result, (self, broadcasted), '*')
+				result  = [[xi * yi for xi, yi in zip(i, j)] for i, j in zip(self.elements, bbroadcasted.elements)]
+				out = Matrix(result, (self, bbroadcasted), '*')
+		
 			else:
-				result  = [[xi * yi for xi, yi in zip(i, j)] for i, j in zip(broadcasted.elements, self.elements)]
+				result  = [[xi * yi for xi, yi in zip(i, j)] for i, j in zip(self.elements, broadcasted.elements)]
 				out = Matrix(result, (self, broadcasted), (self, broadcasted), '*')
 
 		def _backward():
 			pass
 
 		out._backward = _backward
-		return out		
-	
-	def relu(self):
-		out  = Matrix([[i if i > 0 else 0 for i in self.elements[j]] for j in self.elements], (self, ), 'reLU')
-		
-		def _backward():
-			pass
-			
-		out._backward = _backward
-		return out			
+		return out
 
 	
 	def max_margin_loss(self, truth):

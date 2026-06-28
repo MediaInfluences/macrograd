@@ -65,3 +65,31 @@ test = c + a
 
 print("\nresult")
 print_matrix(test)
+
+print("\n(1,m) + (n,m)")
+print("\nd")
+print_matrix(d)
+
+print("\na")
+print_matrix(a)
+
+
+print("\nd + a")
+test = d + a
+
+print("\nresult")
+print_matrix(test)
+
+print("\n(n,m) + (1,m)")
+print("\na")
+print_matrix(a)
+
+print("\nd")
+print_matrix(d)
+
+
+print("\na + d")
+test = a + d 
+
+print("\nresult")
+print_matrix(test)
