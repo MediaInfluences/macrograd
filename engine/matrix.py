@@ -97,17 +97,22 @@ class Matrix():
 			broadcasted = self._broadcast(other._dims)
 			if (other._dims != broadcasted._dims):
 				bbroadcasted = broadcasted._broadcast(other._dims) 
-				out = Matrix([xi + yi for xi, yi in zip(bbroadcasted.elements, other.elements)], (bbroadcasted, other), '+')
+				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(bbroadcasted.elements, other.elements)]
+				out = Matrix(result, (bbroadcasted, self), '+')
+			
 			else:
-				out = Matrix([xi + yi for xi, yi in zip(broadcasted.elements, other.elements)], (broadcasted, other), '+')
-		else:
+				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(broadcasted.elements, other.elements)]
+				out = Matrix(result, (broadcasted, self), '+')
+
+		elif maybe == 'RHS':
 			broadcasted = other._broadcast(self._dims)
 			if (self._dims != broadcasted._dims):
 				bbroadcasted = broadcasted._broadcast(self._dims)
-				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(bbroadcasted.elements, self.elements)]
-				out = Matrix(result, (self, broadcasted), '+')
+				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(self.elements, bbroadcasted.elements)]
+				out = Matrix(result, (self, bbroadcasted), '+')
+		
 			else:
-				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(broadcasted.elements, self.elements)]
+				result  = [[xi + yi for xi, yi in zip(i, j)] for i, j in zip(self.elements, broadcasted.elements)]
 				out = Matrix(result, (self, broadcasted), (self, broadcasted), '+')
 
 		def _backward():

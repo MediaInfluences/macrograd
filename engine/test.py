@@ -52,15 +52,16 @@ test = a + c
 print("\nresult")
 print_matrix(test)
 
-print("\n(n,m) + (1,1)")
-print("\na")
-print_matrix(a)
-
+print("\n(1,1) + (n,m)")
 print("\nc")
 print_matrix(c)
 
-print("\na + c")
-test = a + c
+print("\na")
+print_matrix(a)
+
+
+print("\nc + a")
+test = c + a
+
+print("\nresult")
 print_matrix(test)
-
-
