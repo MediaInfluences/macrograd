@@ -251,7 +251,7 @@ class Matrix():
 		return loss
 
 	
-	def backwards(self) -> None:
+	def backwards(self, show_graph = False) -> None:
 		topo = []
 		
 		def _construct(v):
@@ -264,7 +264,36 @@ class Matrix():
 		for node in reversed(topo):
 			if node.has_grad:
 				node._backward()
+		
+		if show_graph:
+			from graphviz import Digraph	
 
+			def _tbl(M, title):
+				cols = len(M[0])
+				cells = "".join("<tr>" + "".join(f"<td>{x:.3g}</td>" for x in r) + "</tr>" for r in M)
+				return (f"<table border='0' cellborder='1' cellspacing='0'>"
+						f"<tr><td colspan='{cols}'><b>{title}</b></td></tr>{cells}</table>")
+
+			def node_label(node):
+				fwd = _tbl(node.elements, "forward")
+				grd = (_tbl(node.grad.elements, "grad")
+						if node.grad is not None else "<table><tr><td>—</td></tr></table>")
+				return (f"<<table border='0' cellborder='0' cellspacing='10'>"
+						f"<tr><td colspan='2'><b>{node._op or 'leaf'}  {node._dims}</b></td></tr>"
+						f"<tr><td>{fwd}</td><td>{grd}</td></tr></table>>")
+
+			dot = Digraph(format="svg", graph_attr={"rankdir": "LR"})
+			for node in topo:
+				dot.node(str(id(node)), label=node_label(node), shape="plaintext")
+				if node._op:							
+					op_id = str(id(node)) + node._op
+					dot.node(op_id, label=node._op)
+					dot.edge(op_id, str(id(node)))
+				for child in node._inputs:	
+					dot.edge(str(id(child)), str(id(node)) + node._op)
+
+			dot.render("graph", view=True, cleanup=True)
+	
 		
 	def __matmul__(self, other):
 		assert self._dims[1] == other._dims[0], f"Cannot perform matmul on operands of dims {self._dims} and {other._dims}" 

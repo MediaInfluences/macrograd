@@ -4,7 +4,7 @@ lr = 0.25
 true = [[1, -1, 1, -1, 1, -1]]		#(1,6) 
 x1 = [[1, -1, 2, -2, 3, -3]]		#(1,6)
 
-nn = MLP(x1, lr)
+nn = MLP(x1, lr, True)
 
 nn.add_layer(DenseLayer(6,3))		#(1,3)
 nn.add_layer(ActivationFunc())

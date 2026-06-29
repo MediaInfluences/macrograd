@@ -42,11 +42,12 @@ class LossFunc():
 
 
 class MLP():
-	def __init__(self, input: list[list[int|float]], lr: float):	
+	def __init__(self, input: list[list[int|float]], lr: float, _show_graph = False):	
 		self.input = Matrix(input)	
 		self.layers = []
 		self.lr = lr
-		
+		self._show_graph = _show_graph	
+
 	
 	def add_layer(self, layer ):
 		self.layers.append(layer)
@@ -74,5 +75,5 @@ class MLP():
 		for i in range(num):
 			loss = self.forward()		
 			print(f"\nepoch {i} loss: {loss.elements}")
-			loss.backwards()
+			loss.backwards(self._show_graph)
 			self.backwards()

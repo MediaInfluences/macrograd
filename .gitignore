@@ -10,4 +10,8 @@ venv/
 checkpoints/
 data/
 .ipynb_checkpoints/
-EOF
+
+# editor / viz artifacts
+*.swp
+viz/*.svg
+viz/*.gv
