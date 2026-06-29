@@ -31,11 +31,20 @@ A small layer library (`nn/layers.py`) built entirely on the engine, with each p
 
 A 4-layer MLP in `nn/mlp_test.py` (`Dense → ReLU → Dense → ReLU → Dense → ReLU → Dense → loss`) fits a target end-to-end: loss drops from ~3 to **0.0** within ~10 epochs, with the output satisfying every max-margin constraint (correct sign and magnitude, including the negative targets).
 
+## Visualizing the graph
+
+`Matrix.backwards(show_graph=True)` renders the computation graph with [Graphviz](https://graphviz.org/) after the backward pass — one node per `Matrix`, showing its op, shape, and **forward | grad values side by side**, with the operations drawn as their own nodes in between. From the MLP, flip it on with the `_show_graph` flag:
+
+```python
+nn = MLP(x1, lr, True)     # renders + opens the graph each backward pass
+```
+
+Graphviz is imported lazily, so the engine only needs it when you actually turn this on (`uv add graphviz` + `brew install graphviz` for the `dot` binary). Best on small expressions — the full MLP renders as a hairball.
+
 ## What's not done yet
 
 - **Single-example only** — trains on one input→target pair; no dataset iteration / batching yet
 - Only `relu` and `max_margin_loss` so far — more activations / losses would broaden it
-- No graph visualization yet (a `draw_dot`-style renderer over `_op`/`_inputs`)
 
 ## Structure
 
@@ -76,6 +85,6 @@ uv run python engine/backprop_test.py
 - [x] Get `backwards()` running end-to-end
 - [x] Gradient-correctness check against numerical gradients
 - [x] A minimal training loop — fit a tiny example end-to-end (MLP → 0 loss)
+- [x] Graph visualization — `backwards(show_graph=True)` renders the graph (forward + grad per node)
 - [ ] Train over a real dataset (iteration / batching)
-- [ ] Graph visualization (`draw_dot` over `_op`/`_inputs`)
 - [ ] More ops / activations
