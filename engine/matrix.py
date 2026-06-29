@@ -8,6 +8,7 @@ class Matrix():
 
 		self.elements = elements
 		self._dims = self._dimensions()
+		self.has_grad = has_grad
 		if has_grad:
 			init_grad = [[0 for j in range(self._dims[1])] for i in range(self._dims[0])]
 			self.grad = Matrix(init_grad, has_grad = False)
@@ -261,7 +262,8 @@ class Matrix():
 		_construct(self)
 		self.grad = Matrix([[1.0]], has_grad = False)
 		for node in reversed(topo):
-			node._backward()
+			if node.has_grad:
+				node._backward()
 
 		
 	def __matmul__(self, other):
