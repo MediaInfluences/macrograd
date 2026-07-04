@@ -45,6 +45,7 @@ Graphviz is imported lazily, so the engine only needs it when you actually turn 
 
 - **Single-example only** — trains on one input→target pair; no dataset iteration / batching yet
 - Only `relu` and `max_margin_loss` so far — more activations / losses would broaden it
+- **In progress — softmax + NLL classification loss.** The groundwork just landed and is *untested*: an `exp()` op, a `softmax()` stub, and new arithmetic overloads (`-`, `/`, `**`, unary negate). These are checkpointed WIP with known bugs — don't rely on anything past the verified op list above until the gradient check covers them
 
 ## Structure
 
@@ -86,5 +87,8 @@ uv run python engine/backprop_test.py
 - [x] Gradient-correctness check against numerical gradients
 - [x] A minimal training loop — fit a tiny example end-to-end (MLP → 0 loss)
 - [x] Graph visualization — `backwards(show_graph=True)` renders the graph (forward + grad per node)
+- [ ] Softmax + negative-log-likelihood loss (`exp` landed, WIP — backward + stub still to fix)
+- [ ] Fix & gradient-check the new arithmetic dunders (`-`, `/`, `**`, unary negate)
 - [ ] Train over a real dataset (iteration / batching)
+- [ ] PyTorch-style indexing (`m[i, j]`)
 - [ ] More ops / activations

@@ -337,7 +337,7 @@ class Matrix():
 	def __radd__(self, other):
 		return self.hadamar_sum(other)
 
-	def __negative__(self):
+	def __neg__(self):
 		return self * -1	
 
 	def __sub__(self, other):
