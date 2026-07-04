@@ -1,3 +1,12 @@
+"""
+ToDo:
+	- check new dunders
+	- implement softmax
+	- implement negative log likelyhood
+	- maybe change indexing syntax to match pytorch (it's way cooler)
+"""
+import math
+
 class Matrix():
 	def __init__(self, elements: list[list[int | float]], _inputs = (),  _op = '', has_grad = True):
 		assert isinstance(elements, list), "elements param must be of type list[list[int | float]]"
@@ -226,7 +235,18 @@ class Matrix():
 		out._backward = _backward
 		return out
 
+	
+	def exp(self):
+		result = [[math.exp(self.elements[xi][xj]) for xj in range(self._dims[1])] for xi in range(self._dims[0])]
+		out = Matrix(result, (self, ), 'exp')
+	
+		def _backward():
+			self.grad += self * out.grad
 
+		out._backward = _backward
+		return out
+
+	
 	def relu(self):
 		result = [[self.elements[i][j] if self.elements[i][j] > 0 else 0 for j in range(self._dims[1])] for i in range(self._dims[0])]
 		out = Matrix(result, (self, ), 'reLU')
@@ -238,8 +258,12 @@ class Matrix():
 		
 		out._backward = _backward
 		return out
-
 	
+	#finish
+	def softmax(self):
+		expd = self.exp()
+		pass
+		
 	def max_margin_loss(self, truth):
 		assert(isinstance(truth, Matrix)), "True values must be of type Matrix"
 		loss = Matrix([[sum(max(0, 1 - y_true * y_pred) for pred, true in zip(self.elements, truth.elements) for y_pred, y_true in zip(pred, true))]], (self, truth), 'max margin loss')
@@ -293,8 +317,8 @@ class Matrix():
 					dot.edge(str(id(child)), str(id(node)) + node._op)
 
 			dot.render("graph", view=True, cleanup=True)
-	
-		
+
+
 	def __matmul__(self, other):
 		assert self._dims[1] == other._dims[0], f"Cannot perform matmul on operands of dims {self._dims} and {other._dims}" 
 		elements = [[sum(self.elements[i][j] * other.elements[j][k] for j in range(self._dims[1])) for k in range(other._dims[1])] for i in range(self._dims[0])]	
@@ -303,6 +327,7 @@ class Matrix():
 		def _backward():
 			self.grad += out.grad @ other.transpose()
 			other.grad += self.transpose() @ out.grad
+
 		out._backward = _backward
 		return out
 
@@ -312,8 +337,33 @@ class Matrix():
 	def __radd__(self, other):
 		return self.hadamar_sum(other)
 
+	def __negative__(self):
+		return self * -1	
+
+	def __sub__(self, other):
+		return self + (other * -1)
+	
+	def __rsub__(self, other):
+		return self + (other * -1)
+
 	def __mul__(self, other):
 		return self.hadamar_product(other)
 
 	def __rmul__(self, other):
 		return self.hadamar_product(other)
+	
+	#is late, I go sleep and fix tmr	
+	def __pow__(self, n):
+		assert isinstance(n, (int, float)), "power only supports int or float exponent values"
+		out = self
+
+		for i in range(n):
+			out = out * out
+ 
+		return out
+	
+	def __truediv__(self, other):
+		return self * other**-1
+
+	def __rtruediv__(self, other):
+		return self * other**-1
