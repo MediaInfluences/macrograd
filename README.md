@@ -1,8 +1,13 @@
 # macrograd
 
-A tiny **matrix-based autograd engine** (and a small neural-net library on top of it) — [micrograd](https://github.com/karpathy/micrograd), but operating on whole matrices instead of single scalars. Built from scratch to actually understand how backpropagation works under the hood.
+A tiny **matrix-based autograd engine** — [micrograd](https://github.com/karpathy/micrograd), but operating on whole matrices instead of single scalars. Built from scratch to actually understand how backpropagation works under the hood.
 
-> **Status:** Working end-to-end. The autograd engine's gradients are **verified against numerical (finite-difference) gradients to ~3e-10**, and a multi-layer perceptron built on top **trains to zero loss** via forward → backprop → SGD. No numpy, no torch — just nested lists.
+> **Status: mid-rebuild.** The engine's core ops are still verified against
+> numerical (finite-difference) gradients to ~3e-10, but the `nn/` layer
+> library is removed for now — the training loop is moving into the engine
+> tests while I work out softmax/cross-entropy and a proper no-grad story
+> for weight updates. Second-epoch training currently crashes (known, see
+> below). No numpy, no torch — just nested lists.
 
 ## Why "macro"?
 
@@ -14,68 +19,75 @@ Learning project from [Neural Networks: Zero to Hero](https://karpathy.ai/zero-t
 
 The `Matrix` class (`engine/matrix.py`) builds a computational graph as you compute. Each `Matrix` tracks its `elements`, a `grad` (itself a `Matrix`), its input nodes (`_inputs`), the op that produced it (`_op`), and a local `_backward` closure.
 
-- **Forward ops:** `__matmul__` (matrix multiply), `transpose`, `hadamar_sum` (element-wise add), `hadamar_product` (element-wise mul), `relu`, `max_margin_loss`
-- **Operator overloads:** `+` (`__add__`/`__radd__`), `*` (`__mul__`/`__rmul__`), `@` for matmul — write `a + c`, `a * b`, `a @ b` directly
+- **Forward ops:** `__matmul__` (matrix multiply), `transpose`, `hadamar_sum` (element-wise add), `hadamar_product` (element-wise mul), `exp`, `log`, `relu`, `max_margin_loss`, `cross_entropy_loss` (fused softmax + NLL, WIP)
+- **Operator overloads:** `+`, `-`, `*`, `/`, `**`, unary `-`, and `@` for matmul — operands can be raw Python scalars, they get wrapped automatically
 - **Broadcasting:** `_should_broadcast` decides which side broadcasts; `_broadcast` expands along any size-1 axis (`(1,1)`, `(1,m)`, `(n,1)`), and its backward **sum-reduces** the gradient back along exactly those axes
 - **Backward pass:** every op has a real `_backward`; `backwards()` builds the topological order, seeds `dL/dL = 1`, and walks the graph in reverse to accumulate gradients (skipping non-grad constants via `has_grad`)
 - **Verified:** analytic gradients match finite-difference numerical gradients to a max error of **3.3e-10** across all parameters of a 2-layer MLP
 
-## The neural net
-
-A small layer library (`nn/layers.py`) built entirely on the engine, with each piece as its own module (like PyTorch's separate `nn.Linear` and `nn.ReLU`):
-
-- **`DenseLayer`** — a pure affine map `x @ W + b` (no activation baked in)
-- **`ActivationFunc`** — a standalone ReLU layer, stacked *between* dense layers. The output layer has none, so it stays **linear** — outputs can go negative and gradients keep flowing (no dying-ReLU freeze)
-- **`MLP`** — stacks the layers, runs `forward()`, takes the SGD weight step in `backward()`, and `epoch()` runs the training loop. The weight step updates the weights directly, keeping it out of the autograd graph
-- **`LossFunc`** — thin wrapper over `max_margin_loss`
-
-A 4-layer MLP in `nn/mlp_test.py` (`Dense → ReLU → Dense → ReLU → Dense → ReLU → Dense → loss`) fits a target end-to-end: loss drops from ~3 to **0.0** within ~10 epochs, with the output satisfying every max-margin constraint (correct sign and magnitude, including the negative targets).
-
 ## Visualizing the graph
 
-`Matrix.backwards(show_graph=True)` renders the computation graph with [Graphviz](https://graphviz.org/) after the backward pass — one node per `Matrix`, showing its op, shape, and **forward | grad values side by side**, with the operations drawn as their own nodes in between. From the MLP, flip it on with the `_show_graph` flag:
+`Matrix.backwards(show_graph=True)` renders the computation graph with [Graphviz](https://graphviz.org/) after the backward pass — one node per `Matrix`, showing its op, shape, and **forward | grad values side by side**, with the operations drawn as their own nodes in between:
 
 ```python
-nn = MLP(x1, lr, True)     # renders + opens the graph each backward pass
+loss.backwards(True)     # renders + opens the graph after the backward pass
 ```
 
-Graphviz is imported lazily, so the engine only needs it when you actually turn this on (`uv add graphviz` + `brew install graphviz` for the `dot` binary). Best on small expressions — the full MLP renders as a hairball.
+Graphviz is imported lazily, so the engine only needs it when you actually turn this on (`uv add graphviz` + `brew install graphviz` for the `dot` binary). Best on small expressions — a full training-loop graph renders as a hairball.
 
 ## What's not done yet
 
 - **Single-example only** — trains on one input→target pair; no dataset iteration / batching yet
-- Only `relu` and `max_margin_loss` so far — more activations / losses would broaden it
-- **In progress — softmax + NLL classification loss.** The groundwork just landed and is *untested*: an `exp()` op, a `softmax()` stub, and new arithmetic overloads (`-`, `/`, `**`, unary negate). These are checkpointed WIP with known bugs — don't rely on anything past the verified op list above until the gradient check covers them
+- **In progress — cross-entropy training loop.** `cross_entropy_loss`
+  (fused softmax + NLL) lands with a hand-derived backward, and
+  `backprop_nll_test.py` trains one epoch end-to-end. The second epoch
+  crashes — and the reason is instructive: `w -= lr * w.grad` is itself
+  made of engine ops, so the *weight update gets recorded into the
+  computation graph*. The next backward pass walks into last epoch's
+  gradient history and hits constants that have no grad. This is exactly
+  why PyTorch makes you wrap updates in `torch.no_grad()` / use
+  `.detach()` — macrograd needs the same concept, which is the next thing
+  I'm building
+- The `nn/` layer library (DenseLayer / MLP) is gone — **on purpose**. The
+  old design was drifting Keras-wards: stack some layer objects, call
+  `epoch()`, and the actual forward/backward/update mechanics vanish
+  behind the abstraction. I'd rather follow the PyTorch mentality — *you*
+  write the forward pass and the training loop, and the library just
+  hands you autograd and building blocks. (Yes, PyTorch offers
+  `nn.Sequential` too, but the flexibility of explicit code is the point —
+  and in a project whose whole reason to exist is *seeing* the process,
+  I don't want to abstract it away behind simple layer calls, however
+  simple it is right now.) It'll come back as thinner, PyTorch-flavored
+  modules once the loss + no-grad machinery settles
 
 ## Structure
 
 ```
 macrograd/
 ├── engine/
-│   ├── matrix.py          # the Matrix autograd engine (the heart of it)
-│   ├── mat_ops_test.py    # forward-op coverage: transpose, hadamard +/*, matmul, all broadcast shapes
-│   └── backprop_test.py   # 2-layer MLP forward + backward
-├── nn/
-│   ├── layers.py          # DenseLayer, ActivationFunc, MLP, LossFunc — the neural-net library
-│   └── mlp_test.py        # 4-layer MLP that trains to zero loss
-├── main.py                # entrypoint stub
-├── pyproject.toml         # uv project, Python 3.13
+│   ├── matrix.py               # the Matrix autograd engine (the heart of it)
+│   ├── mat_ops_test.py         # forward-op coverage: transpose, hadamard +/*, matmul, all broadcast shapes
+│   ├── backprop_mml_test.py    # 2-layer net, max-margin loss: forward + backward
+│   ├── backprop_nll_test.py    # cross-entropy training loop (WIP — crashes on epoch 2, see above)
+│   └── dunder_test.py          # exercises the arithmetic operator overloads
+├── main.py                     # entrypoint stub
+├── pyproject.toml              # uv project, Python 3.13
 └── README.md
 ```
 
 ## Running it
 
-Uses [uv](https://docs.astral.sh/uv/) with Python 3.13. Run the `nn` tests as modules from the project root:
+Uses [uv](https://docs.astral.sh/uv/) with Python 3.13. Run the tests from `engine/`:
 
 ```bash
-# train the MLP and watch the loss drop to 0:
-uv run python -m nn.mlp_test
-
 # exercise the engine's forward ops across broadcast shapes:
 uv run python engine/mat_ops_test.py
 
-# 2-layer forward + backward, prints gradients:
-uv run python engine/backprop_test.py
+# 2-layer forward + backward with max-margin loss, prints the loss:
+cd engine && uv run python backprop_mml_test.py
+
+# the WIP cross-entropy training loop (epoch 1 works, epoch 2 crashes — documented above):
+cd engine && uv run python backprop_nll_test.py
 ```
 
 ## Roadmap
@@ -85,10 +97,11 @@ uv run python engine/backprop_test.py
 - [x] Finish `_backward` for every op (matmul, hadamard, relu, transpose, loss)
 - [x] Get `backwards()` running end-to-end
 - [x] Gradient-correctness check against numerical gradients
-- [x] A minimal training loop — fit a tiny example end-to-end (MLP → 0 loss)
+- [x] A minimal training loop — fit a tiny example end-to-end (max-margin, single example)
 - [x] Graph visualization — `backwards(show_graph=True)` renders the graph (forward + grad per node)
-- [ ] Softmax + negative-log-likelihood loss (`exp` landed, WIP — backward + stub still to fix)
-- [ ] Fix & gradient-check the new arithmetic dunders (`-`, `/`, `**`, unary negate)
+- [x] Dedup the topo sort so shared nodes don't double-count gradients
+- [ ] Softmax + NLL: forward ✓, one epoch trains — fix graph-recorded weight updates (no_grad/detach) so epoch 2+ works
+- [ ] Gradient-check the new ops (`-`, `/`, `**`, `exp`, `log`, unary negate, cross-entropy) against numerical gradients
 - [ ] Train over a real dataset (iteration / batching)
 - [ ] PyTorch-style indexing (`m[i, j]`)
 - [ ] More ops / activations

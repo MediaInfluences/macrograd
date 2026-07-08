@@ -1,21 +1,26 @@
 """
 ToDo:
-	- check new dunders
-	- implement softmax
-	- implement negative log likelyhood
-	- maybe change indexing syntax to match pytorch (it's way cooler)
+	- Add uniform (easily init weights)
+	- Fix the double tracking issue for backprop stuff (either with no_grad or some other method)
+	- Read through my code and see what needs to be shifted for the Pytorch mentality
+
+Fin:
+	- Regretting design choices
 """
 import math
 
 class Matrix():
-	def __init__(self, elements: list[list[int | float]], _inputs = (),  _op = '', has_grad = True):
-		assert isinstance(elements, list), "elements param must be of type list[list[int | float]]"
-		for i in elements:
-			for j in i:
-				assert isinstance(j, (int | float)), "elements param must be of type list[list[int | float]]"
-				assert len(i) == len(elements[0]), "elements param must be a non-jagged"
+	def __init__(self, elements: list[list[int | float]] | int | float, _inputs = (),  _op = '', has_grad = True):
+		if isinstance(elements, (int | float)):
+			self.elements = [[elements]]
+		else:
+			assert isinstance(elements, list), f"elements param must be of type list[list[int | float]], is type {type(elements)}"
+			for i in elements:
+				for j in i:
+					assert isinstance(j, (int | float)), f"elements param must be of type list[list[int | float]], is type {type(j)}"
+					assert len(i) == len(elements[0]), "elements param must be a non-jagged"
+			self.elements = elements
 
-		self.elements = elements
 		self._dims = self._dimensions()
 		self.has_grad = has_grad
 		if has_grad:
@@ -27,12 +32,13 @@ class Matrix():
 		self._op = _op	
 		self._backward = lambda: None
 
+
+#---------- Internal Methods ----------#
 		
 	def _dimensions(self) -> tuple[int, int]:
 		return (len(self.elements), len(self.elements[0]))
 	
 
-	#I optimized this by making it functional 
 	def _should_broadcast(self, dims: tuple[int, int]) -> str | bool:
 		lhs_a_one = 1 if self._dims[0] == 1 else 0
 		lhs_b_one = 1 if self._dims[1] == 1 else 0
@@ -76,8 +82,8 @@ class Matrix():
 					return 'RHS'		#True
 				return False			#(x,n) (1,m) ; m!=1  -> False
 			return False				#(x,?) (y,?) ; x,y != 1 -> False
-			
-	#The function of doom an despair	
+	
+		
 	def _broadcast(self, dims: tuple[int, int]):
 		assert isinstance(dims, tuple), "dims param must be tuple[int, int]"
 		for dimension in dims:
@@ -111,6 +117,38 @@ class Matrix():
 		return out 
 
 
+#---------- Slice-Of-Life  Methods ----------#
+	
+	@staticmethod	
+	def zeros(dims: tuple[int, int]):
+		elements = [[0 for j in range(dims[1])] for i in range(dims[0])]
+		out = Matrix(elements)
+		return out
+	
+	@staticmethod
+	def ones(dims: tuple[int, int]):
+		elements = [[1 for j in range(dims[1])] for i in range(dims[0])]
+		out = Matrix(elements)
+		return out
+
+
+	def one_hot(self, num_classes: int):
+		assert self._dims[0] == 1, "Macrograd only supports row vectors as input for the one_hot operation"
+		for i in self.elements[0]:
+			assert isinstance(i, int), "Cannot call one_hot on matrices with non-integer elements"
+
+		one_hot = Matrix.zeros((self._dims[1], num_classes))
+		
+		n = 0
+		for i in self.elements[0]:
+			one_hot.elements[n][i] = 1
+			n += 1
+		
+		return one_hot
+
+ 
+#---------- Matrix Operations ----------#
+	
 	def transpose(self):
 		transpose = [[self.elements[i][j] for i in range(self._dims[0])] for j in range(self._dims[1])]
 		out = Matrix(transpose, (self, ), 'T')
@@ -123,7 +161,7 @@ class Matrix():
 
 		
 	def hadamar_sum(self, other):
-		assert(isinstance(other, Matrix)), "Both operands of a hadamar sum must be a matrix"
+		other = other if isinstance(other, Matrix) else Matrix(other)
 		maybe = self._should_broadcast(other._dims)
 		assert isinstance(maybe, str), f"Cannot perform a Hadamar Sum on elements of dim {self._dims} and {other._dims}"
 		
@@ -182,7 +220,7 @@ class Matrix():
 		
 
 	def hadamar_product(self, other):
-		assert(isinstance(other, Matrix)), "Both operands of a hadamar product must be type Matrix"
+		other = other if isinstance(other, Matrix) else Matrix(other)
 		maybe = self._should_broadcast(other._dims)
 		assert isinstance(maybe, str), f"Cannot perform a Hadamar Product on elements of dim {self._dims} and {other._dims}"
 		if maybe == 'LHS':
@@ -235,17 +273,8 @@ class Matrix():
 		out._backward = _backward
 		return out
 
-	
-	def exp(self):
-		result = [[math.exp(self.elements[xi][xj]) for xj in range(self._dims[1])] for xi in range(self._dims[0])]
-		out = Matrix(result, (self, ), 'exp')
-	
-		def _backward():
-			self.grad += self * out.grad
 
-		out._backward = _backward
-		return out
-
+#------- Activation Functions ----------#
 	
 	def relu(self):
 		result = [[self.elements[i][j] if self.elements[i][j] > 0 else 0 for j in range(self._dims[1])] for i in range(self._dims[0])]
@@ -258,12 +287,33 @@ class Matrix():
 		
 		out._backward = _backward
 		return out
+
+
+#---------- Loss Functions ----------#
 	
-	#finish
-	def softmax(self):
+	def cross_entropy_loss(self, truth):
+		assert(isinstance(truth, Matrix)), "True values must be of type Matrix"
 		expd = self.exp()
-		pass
+		sum_expd = [[sum(expd.elements[xi][xj] for xj in range(expd._dims[1]))] for xi in range(expd._dims[0])]	
+		sum_expd = Matrix(sum_expd)
+		probs = expd / sum_expd.transpose()
 		
+		out = probs * truth
+		out = [sum(out.elements[xi][xj] for xj in range(out._dims[1])) for xi in range(out._dims[0])]
+
+		nll = 0.0
+		for survivor in out:
+			nll += -math.log(survivor)	
+
+		out = Matrix(nll/len(truth.elements[0]), (self, ), 'cross entropy loss')	
+
+		def _backward():
+			self.grad += (probs - truth)/len(truth.elements[0]) * out.grad
+		
+		out._backward = _backward
+		return out 
+
+
 	def max_margin_loss(self, truth):
 		assert(isinstance(truth, Matrix)), "True values must be of type Matrix"
 		loss = Matrix([[sum(max(0, 1 - y_true * y_pred) for pred, true in zip(self.elements, truth.elements) for y_pred, y_true in zip(pred, true))]], (self, truth), 'max margin loss')
@@ -274,14 +324,19 @@ class Matrix():
 		loss._backward = _backward
 		return loss
 
-	
+
+#---------- Backpropagation & Friends  ----------#
+
 	def backwards(self, show_graph = False) -> None:
 		topo = []
+		visited = set()
 		
 		def _construct(v):
-			for child in v._inputs:
-				_construct(child)
-			topo.append(v)
+			if v not in visited:
+				visited.add(v)
+				for child in v._inputs:
+					_construct(child)
+				topo.append(v)
 
 		_construct(self)
 		self.grad = Matrix([[1.0]], has_grad = False)
@@ -317,6 +372,30 @@ class Matrix():
 					dot.edge(str(id(child)), str(id(node)) + node._op)
 
 			dot.render("graph", view=True, cleanup=True)
+	
+
+#---------- Primitives ---------#
+
+	def exp(self):
+		result = [[math.exp(self.elements[xi][xj]) for xj in range(self._dims[1])] for xi in range(self._dims[0])]
+		out = Matrix(result, (self, ), 'exp')
+	
+		def _backward():
+			self.grad += self * out.grad
+
+		out._backward = _backward
+		return out
+
+	
+	def log(self):
+		result = [[math.log(self.elements[xi][xj]) for xj in range(self._dims[1])] for xi in range(self._dims[0])]
+		out = Matrix(result, (self, ), 'log')
+		
+		def _backward():
+			self.grad += (self**-1) * out.grad
+		
+		out._backward = _backward	
+		return out	
 
 
 	def __matmul__(self, other):
@@ -331,39 +410,58 @@ class Matrix():
 		out._backward = _backward
 		return out
 
+
 	def __add__(self, other):
+		other = other if isinstance(other, Matrix) else Matrix(other)
 		return self.hadamar_sum(other)
+
 
 	def __radd__(self, other):
+		other = other if isinstance(other, Matrix) else Matrix(other)
 		return self.hadamar_sum(other)
 
+
 	def __neg__(self):
-		return self * -1	
+		return self * Matrix(-1)	
+
 
 	def __sub__(self, other):
-		return self + (other * -1)
+		other = other if isinstance(other, Matrix) else Matrix(other)
+		return self + (other * Matrix(-1))
+
 	
 	def __rsub__(self, other):
-		return self + (other * -1)
+		other = other if isinstance(other, Matrix) else Matrix(other)
+		return other + (self * Matrix(-1))
+
 
 	def __mul__(self, other):
+		other = other if isinstance(other, Matrix) else Matrix(other)
 		return self.hadamar_product(other)
+
 
 	def __rmul__(self, other):
+		other = other if isinstance(other, Matrix) else Matrix(other)
 		return self.hadamar_product(other)
+
 	
-	#is late, I go sleep and fix tmr	
 	def __pow__(self, n):
 		assert isinstance(n, (int, float)), "power only supports int or float exponent values"
-		out = self
+		curr_elements = Matrix(self.elements, has_grad = False)
 
-		for i in range(n):
-			out = out * out
- 
+		result = [[self.elements[xi][xj] ** n for xj in range(self._dims[1])] for xi in range(self._dims[0])]
+		out = Matrix(result, (self, ), 'pow')
+	
+		def _backward():
+			self.grad += (n * self / curr_elements) * out.grad
+	
+		out._backward = _backward
 		return out
+
 	
 	def __truediv__(self, other):
 		return self * other**-1
+
 
 	def __rtruediv__(self, other):
 		return self * other**-1
