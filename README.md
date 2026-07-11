@@ -11,6 +11,11 @@ A tiny **matrix-based autograd engine** — [micrograd](https://github.com/karpa
 > The `nn/` layer library is still removed while the new ops get
 > gradient-checked. No numpy, no torch — just nested lists.
 
+<p align="center">
+  <img src="docs/readme-graph.svg" alt="macrograd rendering its own backward pass: one neuron layer (x @ w + b, ReLU, max-margin loss) with forward values and gradients side by side in every node" width="100%">
+</p>
+<p align="center"><em>The engine drawing its own backward pass — one neuron layer, forward values and gradients side by side in every node. See <a href="#visualizing-the-graph">Visualizing the graph</a>.</em></p>
+
 ## Why "macro"?
 
 Karpathy's micrograd builds an autograd engine over scalar `Value` objects. **macrograd scales that up to `Matrix` objects** — matmul, broadcasting, Hadamard (element-wise) ops, ReLU — which is much closer to how real frameworks like PyTorch actually compute. Same core idea (build a graph on the forward pass, walk it backward for gradients), bigger unit of work.
