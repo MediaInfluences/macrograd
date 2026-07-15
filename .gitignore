@@ -15,3 +15,7 @@ data/
 *.swp
 viz/*.svg
 viz/*.gv
+
+# graphviz render output
+graph.svg
+graph
