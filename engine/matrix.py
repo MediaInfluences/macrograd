@@ -66,7 +66,6 @@ class Matrix():
 
 
 #---------- Internal Methods ----------#
-		
 	def _dimensions(self) -> tuple[int, int]:
 		return (len(self.elements), len(self.elements[0]))
 
@@ -99,7 +98,6 @@ class Matrix():
 	
 		return False
 
-		
 	def _broadcast(self, dims: tuple[int, int]):
 		if not isinstance(dims, tuple):
 			raise TypeError(f"dims param must be tuple[int, int]; is type: {type(dims)}")
@@ -143,7 +141,6 @@ class Matrix():
 
 
 #---------- Slice-Of-Life Methods ----------#
-	#can just make this Matrix(elements, has_grad=has_grad)
 	@staticmethod	
 	def zeros(dims: tuple[int, int], has_grad = True):
 		elements = [[0 for j in range(dims[1])] for i in range(dims[0])]
@@ -164,9 +161,13 @@ class Matrix():
 		out = Matrix(elements, has_grad = has_grad)
 		return out
 
+
 	#one-hot should not have grad -> is transformation to indexing
 	@staticmethod
 	def one_hot(matrix: Matrix, num_classes: int):
+		if num_classes <= 0:
+			raise ValueError(f"num_classes must be greater than 0")
+
 		if matrix._dims[0] != 1:
 			raise ValueError(f"Macrograd only supports row vectors as input for the one_hot operation; has dims: {matrix._dims}")
 
@@ -432,7 +433,7 @@ class Matrix():
 				topo.append(v)
 
 		_construct(self)
-		self.grad = Matrix([[1.0]], has_grad = False)
+		self.grad = Matrix.ones(self._dims, has_grad = False)
 		for node in reversed(topo):
 			if node.has_grad:
 				node._backward()
@@ -520,6 +521,13 @@ class Matrix():
 		other = other if isinstance(other, Matrix) else Matrix(other)
 		return self.hadamar_sum(other)
 
+	
+	def __iadd__(self, other):
+		if self.has_grad and Matrix.yesgrad:
+			raise RuntimeError("in-place updates on a grad-tracked matrix while autograd is recording")
+		self.elements = [[self.elements[i][j] + other.elements[i][j] for j in range(self._dims[1])] for i in range(self._dims[0])]
+		return self
+
 
 	def __neg__(self):
 		return self * -1	
@@ -528,6 +536,13 @@ class Matrix():
 	def __sub__(self, other):
 		other = other if isinstance(other, Matrix) else Matrix(other)
 		return self + (other * -1)
+
+	
+	def __isub__(self, other):
+		if self.has_grad and Matrix.yesgrad:
+			raise RuntimeError("in-place updates on a grad-tracked matrix while autograd is recording")
+		self.elements = [[self.elements[i][j] - other.elements[i][j] for j in range(self._dims[1])] for i in range(self._dims[0])]
+		return self
 
 	
 	def __rsub__(self, other):

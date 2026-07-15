@@ -1,4 +1,5 @@
 from engine.matrix import Matrix
+import pytest
 
 def test_matrix_init_when_element_scalar():
 	test = Matrix(777)
@@ -17,19 +18,19 @@ def test_matrix_init_when_element_noncalar():
 	assert test._inputs == ()
 	assert test._op == ''
 	assert test.has_grad is True
-	assert test.grad == [[0, 0, 0, 0, 0, 0, 0]]
-	assert isinstance(test.grad.grad, None)
+	assert test.grad.elements == [[0, 0, 0, 0, 0, 0, 0]]
+	assert test.grad.grad is None
 
 
 def test_matrix_init_when_element_nested_nonscalars():
-	test = Matrix([[8, 6, 7, 5, 3, 0 , 9]])
+	test = Matrix([[8, 6, 7], [5, 3, 0] , [9, 9, 9]])
 	assert test.elements == [[8, 6, 7], [5, 3, 0], [9, 9, 9]]
 	assert test._dims == (3, 3)
 	assert test._inputs == ()
 	assert test._op == ''
 	assert test.has_grad is True
-	assert test.grad == [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-	assert isinstance(test.grad.grad, None)
+	assert test.grad.elements == [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+	assert test.grad.grad is None
 
 def test_matrix_init_when_element_is_not_list():
 	with pytest.raises(TypeError):
