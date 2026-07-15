@@ -2,14 +2,14 @@
 
 A tiny **matrix-based autograd engine** — [micrograd](https://github.com/karpathy/micrograd), but operating on whole matrices instead of single scalars. Built from scratch to actually understand how backpropagation works under the hood.
 
-> **Status: mid-rebuild.** The engine's core ops are still verified against
-> numerical (finite-difference) gradients to ~3e-10, and the cross-entropy
-> training loop trains end-to-end (100 epochs) — the no-grad story for
-> weight updates landed as a `Matrix.no_grad()` context manager. Currently
-> migrating from print-and-eyeball scripts to a real pytest suite: 13 green,
-> 7 deliberately red as the spec for in-flight constructor/validation work.
-> The `nn/` layer library is still removed while the new ops get
-> gradient-checked. No numpy, no torch — just nested lists.
+> **Status: training end-to-end.** A 5-layer ReLU net (`main.py`) trains
+> from loss 26.5 to **exactly 0.0** in 21 epochs — weight updates now run
+> through guarded **in-place ops** (`w -= lr * w.grad` mutates the parameter
+> instead of replacing it) under the `Matrix.no_grad()` context manager.
+> The pytest migration is done: **31 green, 0 red**. Core ops are verified
+> against numerical (finite-difference) gradients to ~3e-10; extending that
+> harness to every op is the next milestone. The `nn/` layer library stays
+> removed until then. No numpy, no torch — just nested lists.
 
 <p align="center">
   <img src="docs/readme-graph.svg" alt="macrograd rendering its own backward pass: one neuron layer (x @ w + b, ReLU, max-margin loss) with forward values and gradients side by side in every node" width="100%">
@@ -31,6 +31,7 @@ The `Matrix` class (`engine/matrix.py`) builds a computational graph as you comp
 - **Broadcasting:** `_should_broadcast` decides which side broadcasts; `_broadcast` expands along any size-1 axis (`(1,1)`, `(1,m)`, `(n,1)`), and its backward **sum-reduces** the gradient back along exactly those axes
 - **Backward pass:** every op has a real `_backward`; `backwards()` builds the topological order, seeds `dL/dL = 1`, and walks the graph in reverse to accumulate gradients (skipping non-grad constants via `has_grad`)
 - **No-grad mode:** `with Matrix.no_grad():` disables graph recording, PyTorch-style — a class-level flag checked once in `__init__` means every `Matrix` built inside the block comes out as a leaf (no `_inputs`, no `_backward`). This exists because `w -= lr * w.grad` is itself made of engine ops: without it, every weight update got *recorded into the graph*, and the next epoch's backward walked into last epoch's history and crashed on grad-less constants — the same reason PyTorch makes you wrap updates in `torch.no_grad()`
+- **Guarded in-place ops:** `__isub__`/`__iadd__` mutate `elements` and return the *same* object, so a weight survives its own update — an out-of-place `w = w - ...` inside `no_grad` re-creates the parameter as a grad-less constant and silently freezes training after one epoch (PyTorch's classic footgun, faithfully reproduced here before being fixed). The guard raises on in-place writes to grad-tracked matrices while autograd is recording, torch-style: backward closures read `elements`, so silent mutation would corrupt gradients
 - **Verified:** analytic gradients match finite-difference numerical gradients to a max error of **3.3e-10** across all parameters of a 2-layer MLP
 
 ## Visualizing the graph
@@ -46,13 +47,13 @@ Graphviz is imported lazily, so the engine only needs it when you actually turn 
 ## What's not done yet
 
 - **Single-example only** — trains on one input→target pair; no dataset iteration / batching yet
-- **The new ops aren't gradient-checked yet** — `cross_entropy_loss` (fused
-  softmax + NLL) has a hand-derived backward and the loss demonstrably
-  falls over 100 epochs, but it (and `-`, `/`, `**`, `exp`, `log`) still
-  need verification against finite-difference gradients like the core ops
-- **`detatch()` and `uniform()` are written but untested** — the per-tensor
-  graph cut-off and the weight initializer exist, but per house rules
-  nothing counts as done before its tests pass
+- **The finite-difference harness is the next milestone** — the losses have
+  hand-derived backwards and networks demonstrably train to zero, but the
+  newer ops (`-`, `/`, `**`, `exp`, `log`, unary negate, `cross_entropy_loss`)
+  still need the same numerical verification the core ops got. One
+  parametrized gradient-check over every op closes the book on testing
+- **`detatch()` is written but untested** — the per-tensor graph cut-off
+  exists, but per house rules nothing counts as done before its tests pass
 - The `nn/` layer library (DenseLayer / MLP) is gone — **on purpose**. The
   old design was drifting Keras-wards: stack some layer objects, call
   `epoch()`, and the actual forward/backward/update mechanics vanish
@@ -76,24 +77,29 @@ macrograd/
 │   └── matrix.py                          # the Matrix autograd engine (the heart of it)
 ├── tests/
 │   ├── test_matrix_init_behaviour.py      # constructor contracts: scalars, jagged input, raised errors
-│   └── test_internal_method_behavior.py   # _dimensions + _should_broadcast/_broadcast across shapes
-├── main.py                                # entrypoint stub
+│   ├── test_internal_method_behavior.py   # _dimensions + _should_broadcast/_broadcast across shapes
+│   └── test_slice_of_life_methods.py      # zeros / ones / uniform / one_hot
+├── main.py                                # the training demo: 5-layer ReLU net, max-margin loss
 ├── pyproject.toml                         # uv project, Python 3.13, pytest as the dev group
 └── README.md
 ```
 
 The old print-and-eyeball scripts (`mat_ops_test`, `backprop_mml_test`,
-`backprop_nll_test`, `dunder_test`) are retired — their coverage is being
-rebuilt as real assertions in `tests/`. The 100-epoch training-loop demo
-will come back as an example script once the suite lands.
+`backprop_nll_test`, `dunder_test`) are retired — their coverage now lives
+as real assertions in `tests/`.
 
 ## Running it
 
 Uses [uv](https://docs.astral.sh/uv/) with Python 3.13:
 
 ```bash
-uv run pytest    # 13 green; 7 red on purpose — the executable spec for in-flight work
+uv run pytest           # 31 passed
+uv run python -m main   # 5-layer net: loss 26.5 -> 0.0 in 21 epochs, then holds
 ```
+
+The exact zero is real, not rounding: max-margin is a hinge loss, so once
+every prediction clears its margin the loss (and every gradient) is
+literally 0.0 and the weights hold still.
 
 ## Roadmap
 
@@ -106,8 +112,9 @@ uv run pytest    # 13 green; 7 red on purpose — the executable spec for in-fli
 - [x] Graph visualization — `backwards(show_graph=True)` renders the graph (forward + grad per node)
 - [x] Dedup the topo sort so shared nodes don't double-count gradients
 - [x] Softmax + NLL training loop — `Matrix.no_grad()` keeps weight updates out of the graph; 100 epochs, loss 3.51 → 0.66
-- [ ] Finish the pytest migration — turn the 7 red tests green, then gradient tests for every broadcast/backward path
-- [ ] Gradient-check the new ops (`-`, `/`, `**`, `exp`, `log`, unary negate, cross-entropy, `detatch`, `uniform`) against numerical gradients
+- [x] Pytest migration — 31 green, 0 red; print-and-eyeball scripts retired
+- [x] Guarded in-place ops — `__isub__`/`__iadd__` keep parameters alive through updates; 5-layer net trains 26.5 → 0.0
+- [ ] Finite-difference harness over every op (`-`, `/`, `**`, `exp`, `log`, unary negate, cross-entropy, `detatch`, broadcast paths) — the last testing milestone
 - [ ] Train over a real dataset (iteration / batching)
 - [ ] PyTorch-style indexing (`m[i, j]`)
 - [ ] More ops / activations
